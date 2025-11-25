@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getDefaultForecastPayload, simulateForecast } from '../lib/simulation';
 import { SimulationRequest } from '../types/forecast';
+import { listProjects } from '../services/projectStore';
 
 const router = Router();
 
@@ -9,6 +10,7 @@ const monthlyOverrideSchema = z.object({
   date: z.string(),
   growth: z.number().optional(),
   churn: z.number().optional(),
+  salesMarketingExpense: z.number().optional(),
 });
 
 const pricingSchema = z.object({
@@ -32,6 +34,17 @@ const projectSchema = z.object({
   monthlyOverrides: z.array(monthlyOverrideSchema).default([]),
 });
 
+const sharedExpensesSchema = z
+  .object({
+    generalAndAdministrative: z.number().optional(),
+    technologyAndDevelopment: z.number().optional(),
+    fulfillmentAndService: z.number().optional(),
+    depreciationAndAmortization: z.number().optional(),
+  })
+  .partial();
+
+const sharedExpenseOverridesSchema = z.record(z.string(), sharedExpensesSchema).optional();
+
 const globalSettingsSchema = z
   .object({
     startDate: z.string().optional(),
@@ -43,6 +56,11 @@ const globalSettingsSchema = z
     planUpgradeRate: z.number().optional(),
     planDowngradeRate: z.number().optional(),
     couponRedemptionRate: z.number().optional(),
+    vatRate: z.number().optional(),
+    corporateTaxRate: z.number().optional(),
+    corporateTaxThreshold: z.number().optional(),
+    sharedExpenses: sharedExpensesSchema.optional(),
+    sharedExpenseOverrides: sharedExpenseOverridesSchema,
   })
   .partial();
 
@@ -52,21 +70,31 @@ const requestSchema = z.object({
   selectedProjectIds: z.array(z.string()).optional(),
 });
 
-router.get('/defaults', (_req, res) => {
-  const blueprint = getDefaultForecastPayload();
-  const simulation = simulateForecast();
-  res.json({ blueprint, simulation });
+router.get('/defaults', async (_req, res) => {
+  try {
+    const projects = await listProjects();
+    const blueprint = getDefaultForecastPayload(projects);
+    const simulation = simulateForecast(undefined, projects);
+    res.json({ blueprint, simulation });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
 });
 
-router.post('/simulate', (req, res) => {
+router.post('/simulate', async (req, res) => {
   const parseResult = requestSchema.safeParse(req.body);
   if (!parseResult.success) {
     return res.status(400).json({ errors: parseResult.error.flatten() });
   }
 
-  const payload = parseResult.data as SimulationRequest;
-  const response = simulateForecast(payload);
-  return res.json(response);
+  try {
+    const projects = await listProjects();
+    const payload = parseResult.data as SimulationRequest;
+    const response = simulateForecast(payload, projects);
+    return res.json(response);
+  } catch (error) {
+    return res.status(500).json({ error: (error as Error).message });
+  }
 });
 
 export default router;

@@ -1,5 +1,5 @@
 import type { Document, ObjectId } from 'mongodb';
-import type { GlobalSettings, SharedExpenses } from './forecast';
+import type { GlobalSettings, SharedExpenses, SharedExpenseSchedule } from './forecast';
 
 export interface RateOverrideState {
   growth?: number | undefined;
@@ -36,6 +36,7 @@ export interface ScenarioGlobalSettings {
   corporateTaxRate?: number | undefined;
   corporateTaxThreshold?: number | undefined;
   sharedExpenses?: ScenarioSharedExpenses | undefined;
+  sharedExpenseOverrides?: SharedExpenseSchedule | undefined;
 }
 
 export interface ScenarioPayload {

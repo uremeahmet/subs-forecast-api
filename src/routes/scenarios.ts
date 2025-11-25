@@ -37,6 +37,8 @@ const sharedExpensesSchema = z
   })
   .partial();
 
+const sharedExpenseOverridesSchema = z.record(z.string(), sharedExpensesSchema).optional();
+
 const globalSettingsSchema = z
   .object({
     startDate: z.string().optional(),
@@ -52,6 +54,7 @@ const globalSettingsSchema = z
     corporateTaxRate: z.number().optional(),
     corporateTaxThreshold: z.number().optional(),
     sharedExpenses: sharedExpensesSchema.optional(),
+    sharedExpenseOverrides: sharedExpenseOverridesSchema,
   })
   .partial()
   .optional();

@@ -14,6 +14,8 @@ import {
   TimeseriesPoint,
   MonthKey,
   SharedExpenses,
+  SharedExpenseSchedule,
+  SharedExpensesOverride,
 } from '../types/forecast';
 import { normalizeMonthKey } from './month';
 import { clamp, round2, round4, safeDivide } from './math';
@@ -28,12 +30,7 @@ interface ProjectSimulationResult {
   cohorts: CohortMatrix;
 }
 
-const resolveProjectConfig = (input?: ProjectInput): ResolvedProject => {
-  const base = DEFAULT_PROJECTS.find((project) => project.id === input?.id);
-  if (!base) {
-    throw new Error(`Unknown project id: ${input?.id}`);
-  }
-
+const resolveProjectConfig = (base: ProjectDefinition, input?: ProjectInput): ResolvedProject => {
   return {
     ...base,
     name: input?.name ?? base.name,
@@ -132,6 +129,32 @@ const aggregatePoints = (points: ProjectTimeseriesPoint[]): ProjectTimeseriesPoi
      acc.profit += point.profit;
     return acc;
   }, emptyPoint());
+};
+
+const mergeSharedExpenses = (
+  base: SharedExpenses,
+  override?: SharedExpensesOverride
+): SharedExpenses => ({
+  generalAndAdministrative: override?.generalAndAdministrative ?? base.generalAndAdministrative,
+  technologyAndDevelopment: override?.technologyAndDevelopment ?? base.technologyAndDevelopment,
+  fulfillmentAndService: override?.fulfillmentAndService ?? base.fulfillmentAndService,
+  depreciationAndAmortization:
+    override?.depreciationAndAmortization ?? base.depreciationAndAmortization,
+});
+
+const computeMonthlySharedExpenseTotal = (
+  monthKey: string,
+  base: SharedExpenses,
+  overrides?: SharedExpenseSchedule
+) => {
+  const monthOverride = overrides?.[monthKey];
+  const general = monthOverride?.generalAndAdministrative ?? base.generalAndAdministrative ?? 0;
+  const technology = monthOverride?.technologyAndDevelopment ?? base.technologyAndDevelopment ?? 0;
+  const fulfillment = monthOverride?.fulfillmentAndService ?? base.fulfillmentAndService ?? 0;
+  const depreciation =
+    monthOverride?.depreciationAndAmortization ?? base.depreciationAndAmortization ?? 0;
+
+  return round2(general + technology + fulfillment + depreciation);
 };
 
 const finalizeAggregatePoint = (point: ProjectTimeseriesPoint) => {
@@ -285,22 +308,31 @@ const simulateSingleProject = (
   };
 };
 
-export const simulateForecast = (payload?: SimulationRequest): SimulationResponse => {
+export const simulateForecast = (
+  payload?: SimulationRequest,
+  projectDefinitions?: ProjectDefinition[]
+): SimulationResponse => {
   const incomingGlobal = payload?.globalSettings ?? {};
   const globalSettings: GlobalSettings = {
     ...DEFAULT_GLOBAL_SETTINGS,
     ...incomingGlobal,
-    sharedExpenses: {
-      ...DEFAULT_GLOBAL_SETTINGS.sharedExpenses,
-      ...(incomingGlobal.sharedExpenses ?? {}),
+    sharedExpenses: mergeSharedExpenses(
+      DEFAULT_GLOBAL_SETTINGS.sharedExpenses,
+      incomingGlobal.sharedExpenses
+    ),
+    sharedExpenseOverrides: {
+      ...(DEFAULT_GLOBAL_SETTINGS.sharedExpenseOverrides ?? {}),
+      ...(incomingGlobal.sharedExpenseOverrides ?? {}),
     },
   };
 
   const overrideMap = new Map<string, ProjectInput>();
   payload?.projects?.forEach((project) => overrideMap.set(project.id, project));
 
-  const resolvedProjects = DEFAULT_PROJECTS.map((project) =>
-    resolveProjectConfig(overrideMap.get(project.id) ?? { id: project.id, monthlyOverrides: [] })
+  const baseProjects = projectDefinitions?.length ? projectDefinitions : DEFAULT_PROJECTS;
+
+  const resolvedProjects = baseProjects.map((project) =>
+    resolveProjectConfig(project, overrideMap.get(project.id))
   );
 
   const selectedIds = new Set(
@@ -309,12 +341,6 @@ export const simulateForecast = (payload?: SimulationRequest): SimulationRespons
 
   const projectResults = resolvedProjects.map((project) => simulateSingleProject(project, globalSettings));
 
-  const sharedExpenseTotal = round2(
-    (globalSettings.sharedExpenses.generalAndAdministrative ?? 0) +
-      (globalSettings.sharedExpenses.technologyAndDevelopment ?? 0) +
-      (globalSettings.sharedExpenses.fulfillmentAndService ?? 0) +
-      (globalSettings.sharedExpenses.depreciationAndAmortization ?? 0)
-  );
   const yearlyRevenueTracker = new Map<number, number>();
 
   const timeseries: TimeseriesPoint[] = MONTH_SEQUENCE.map((month, index) => {
@@ -331,6 +357,11 @@ export const simulateForecast = (payload?: SimulationRequest): SimulationRespons
 
     const totals = aggregatePoints(selectedPoints);
     totals.date = month.key;
+    const sharedExpenseTotal = computeMonthlySharedExpenseTotal(
+      month.key,
+      globalSettings.sharedExpenses,
+      globalSettings.sharedExpenseOverrides
+    );
     totals.sharedExpenses = sharedExpenseTotal;
     totals.totalExpenses += sharedExpenseTotal;
     const year = month.date.getFullYear();
@@ -405,8 +436,8 @@ export const simulateForecast = (payload?: SimulationRequest): SimulationRespons
   };
 };
 
-export const getDefaultForecastPayload = () => ({
-  projects: DEFAULT_PROJECTS.map((project) => ({
+export const getDefaultForecastPayload = (projects: ProjectDefinition[]) => ({
+  projects: projects.map((project) => ({
     id: project.id,
     name: project.name,
     description: project.description,

@@ -25,4 +25,5 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
     fulfillmentAndService: 0,
     depreciationAndAmortization: 0,
   },
+  sharedExpenseOverrides: {},
 };

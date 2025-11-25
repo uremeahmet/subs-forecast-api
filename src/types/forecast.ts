@@ -52,7 +52,13 @@ export interface SharedExpenses {
   depreciationAndAmortization: number;
 }
 
-export interface SharedExpensesOverride extends Partial<SharedExpenses> {}
+export interface SharedExpensesOverride {
+  generalAndAdministrative?: number | undefined;
+  technologyAndDevelopment?: number | undefined;
+  fulfillmentAndService?: number | undefined;
+  depreciationAndAmortization?: number | undefined;
+}
+export type SharedExpenseSchedule = Record<string, SharedExpensesOverride>;
 
 export interface GlobalSettings {
   startDate: string;
@@ -68,12 +74,14 @@ export interface GlobalSettings {
   corporateTaxRate: number;
   corporateTaxThreshold: number;
   sharedExpenses: SharedExpenses;
+  sharedExpenseOverrides?: SharedExpenseSchedule;
 }
 
 export interface SimulationRequest {
   projects?: ProjectInput[];
   globalSettings?: Partial<Omit<GlobalSettings, 'sharedExpenses'>> & {
     sharedExpenses?: SharedExpensesOverride;
+    sharedExpenseOverrides?: SharedExpenseSchedule;
   };
   selectedProjectIds?: string[];
 }
