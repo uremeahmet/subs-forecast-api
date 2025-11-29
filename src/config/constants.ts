@@ -2,7 +2,7 @@ import { GlobalSettings } from '../types/forecast';
 import { monthRange } from '../lib/month';
 
 export const FORECAST_START = '2026-04-01';
-export const FORECAST_END = '2028-12-01';
+export const FORECAST_END = '2032-12-01';
 
 export const MONTH_SEQUENCE = monthRange(FORECAST_START, FORECAST_END);
 

@@ -1,14 +1,48 @@
 import { ObjectId } from 'mongodb';
 import { getCollection } from '../db/mongo';
-import type { ProjectDefinition } from '../types/forecast';
+import type { MonthKey, MonthlyRate, ProjectDefinition } from '../types/forecast';
 import { DEFAULT_PROJECTS } from '../config/defaultProjects';
 import { DEFAULT_MONTHLY_RATES } from '../config/rateTables';
+import { MONTH_SEQUENCE } from '../config/constants';
 
 interface ProjectDocument extends ProjectDefinition {
   _id: ObjectId;
 }
 
 const COLLECTION = 'forecast_projects';
+
+const FALLBACK_RATE: MonthlyRate = {
+  date: '1970-01',
+  growthRate: 0.15,
+  churnRate: 0.04,
+  salesMarketingExpense: 0,
+};
+
+const normalizeMonthlyDefaults = (source: MonthlyRate[] = []): MonthlyRate[] => {
+  const byKey = new Map<MonthKey, MonthlyRate>();
+  source.forEach((entry) => {
+    if (entry?.date) {
+      byKey.set(entry.date as MonthKey, entry);
+    }
+  });
+
+  return MONTH_SEQUENCE.map((month, index) => {
+    const existing = byKey.get(month.key as MonthKey);
+    if (existing) {
+      return existing;
+    }
+    const fallback =
+      DEFAULT_MONTHLY_RATES[index] ??
+      DEFAULT_MONTHLY_RATES[DEFAULT_MONTHLY_RATES.length - 1] ??
+      FALLBACK_RATE;
+    return {
+      date: month.key as MonthKey,
+      growthRate: fallback.growthRate,
+      churnRate: fallback.churnRate,
+      salesMarketingExpense: fallback.salesMarketingExpense ?? 0,
+    };
+  });
+};
 
 const serializeProject = (doc: ProjectDocument): ProjectDefinition => ({
   id: doc.id,
@@ -17,7 +51,7 @@ const serializeProject = (doc: ProjectDocument): ProjectDefinition => ({
   startingSubscribers: doc.startingSubscribers,
   pricing: doc.pricing,
   metrics: doc.metrics,
-  monthlyDefaults: doc.monthlyDefaults,
+  monthlyDefaults: normalizeMonthlyDefaults(doc.monthlyDefaults),
 });
 
 const slugify = (value: string) =>
